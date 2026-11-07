@@ -148,7 +148,7 @@ Users remain responsible for protecting their Windows account, database backups,
 
 - OCR is not included; scanned PDFs are flagged for OCR review.
 - Extraction is deterministic and should be reviewed for unfamiliar invoice layouts.
-- The 3.0 visual acceptance evidence includes offscreen Qt screenshots with a known font-rendering limitation.
+- Repository screenshots are native captures from the development Windows session; clean-machine visual acceptance remains outstanding.
 - Clean Windows 10/11 virtual-machine testing has not been completed.
 - This release does not claim full accounting, tax, or statutory-compliance coverage.
 
