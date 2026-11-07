@@ -1,4 +1,4 @@
-# InvoiceFlow 2.2.0
+# InvoiceFlow 2.3.0
 
 InvoiceFlow is a native Windows desktop application for deterministic local processing of text-based PDF invoices.
 
@@ -16,6 +16,9 @@ InvoiceFlow is a native Windows desktop application for deterministic local proc
 - Reports & Business Insights backend with monthly/rolling periods, traceable metrics, comparisons, targets, budgets and data-quality explanations.
 - Card-based home navigation with visual period selection and clearer empty/data-quality states.
 - Safer worker cleanup, throttled progress signals and resumable-batch filtering.
+- Shared financial analytics service with verified KPI cards, monthly chart data, expense/customer/supplier breakdowns and evidence-backed insights.
+- Functional verified Sales, Purchases & Expenses, Customers & Suppliers, Budgets & Targets and Business Insights pages.
+- Visual date presets, configurable April–March financial-year periods, custom calendar ranges and shareable PDF business reports.
 
 Scanned PDFs are detected and marked as requiring OCR. OCR is intentionally not included. Extraction is deterministic and should be reviewed for unfamiliar invoice layouts; no claim is made that all real-world invoices are supported.
 

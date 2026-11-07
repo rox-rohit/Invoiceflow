@@ -61,18 +61,37 @@ class BusinessReport:
             return value
         return json_value(data)
 
-def period_for(kind: str, anchor: date | None=None) -> ReportPeriod:
+def period_between(start: date, end: date, label: str = "Custom period") -> ReportPeriod:
+    if end < start: raise ValueError("Report end date cannot be before its start date")
+    return ReportPeriod(start, end, label, end <= date.today())
+
+def previous_period(period: ReportPeriod) -> ReportPeriod:
+    length = (period.end - period.start).days + 1
+    end = period.start - timedelta(days=1)
+    return ReportPeriod(end - timedelta(days=length - 1), end, "Previous " + period.label, end <= date.today())
+
+def period_for(kind: str, anchor: date | None=None, financial_year_start_month: int = 4) -> ReportPeriod:
     anchor=anchor or date.today(); first=anchor.replace(day=1); next_month=(first.replace(day=28)+timedelta(days=4)).replace(day=1); month_end=next_month-timedelta(days=1)
     if kind=="day": return ReportPeriod(anchor,anchor,anchor.isoformat())
     if kind=="week":
         start=anchor-timedelta(days=anchor.weekday()); return ReportPeriod(start,start+timedelta(days=6),f"Week of {start.isoformat()}")
+    if kind=="yesterday": return ReportPeriod(anchor-timedelta(days=1),anchor-timedelta(days=1),"Yesterday")
+    if kind=="last_week":
+        end=anchor-timedelta(days=anchor.weekday()+1); return ReportPeriod(end-timedelta(days=6),end,"Last week")
     if kind=="month": return ReportPeriod(first,month_end,first.strftime("%B %Y"),month_end<=date.today())
-    if kind in {"last_6_months","last_12_months"}:
-        count=6 if kind=="last_6_months" else 12; start=first
+    if kind=="last_month":
+        end=first-timedelta(days=1); start=end.replace(day=1); return ReportPeriod(start,end,start.strftime("%B %Y"),end<=date.today())
+    if kind in {"last_3_months","last_6_months","last_12_months"}:
+        count={"last_3_months":3,"last_6_months":6,"last_12_months":12}[kind]; start=first
         for _ in range(count-1): start=(start.replace(day=1)-timedelta(days=1)).replace(day=1)
         return ReportPeriod(start,month_end, f"Last {count} months", month_end<=date.today())
     if kind=="year_to_date": return ReportPeriod(anchor.replace(month=1,day=1),anchor,"Year to date",False)
     if kind=="calendar_year": return ReportPeriod(anchor.replace(month=1,day=1),anchor.replace(month=12,day=31),str(anchor.year),anchor<date(anchor.year,12,31))
+    if kind in {"current_financial_year","previous_financial_year"}:
+        year=anchor.year if anchor.month >= financial_year_start_month else anchor.year-1
+        if kind=="previous_financial_year": year-=1
+        start=date(year,financial_year_start_month,1); end=date(year+1,financial_year_start_month,1)-timedelta(days=1)
+        return ReportPeriod(start,end,f"Financial year {year}-{str(year+1)[-2:]}",end<=date.today())
     raise ValueError(f"Unsupported report period: {kind}")
 
 def _amount(value) -> Decimal:

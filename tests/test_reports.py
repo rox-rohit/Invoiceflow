@@ -1,7 +1,7 @@
 from datetime import date
 from src.financials import FinancialTransaction
 from src.report_config import ReportConfigStore, SavedReportConfig
-from src.report_exporter import export_report_csv, export_report_excel, export_report_json
+from src.report_exporter import export_report_csv, export_report_excel, export_report_json, export_report_pdf
 from src.reports import build_report, period_for, target_scenarios
 
 def tx(day,kind,amount,party="",source=1): return FinancialTransaction(day,kind,amount,"INR",source,f"{source}.pdf",True,party=party)
@@ -16,6 +16,6 @@ def test_monthly_report_has_traceable_metrics_and_insight(tmp_path):
 
 def test_report_exports_and_saved_config(tmp_path):
     report=build_report([tx("2026-01-01","sale",100,"",1)],period_for("month",date(2026,1,15)),"INR")
-    export_report_json(report,tmp_path/"r.json"); export_report_csv(report,tmp_path/"r.csv"); export_report_excel(report,tmp_path/"r.xlsx")
+    export_report_json(report,tmp_path/"r.json"); export_report_csv(report,tmp_path/"r.csv"); export_report_excel(report,tmp_path/"r.xlsx"); export_report_pdf(report,tmp_path/"r.pdf")
     store=ReportConfigStore(tmp_path/"reports.json"); store.save(SavedReportConfig("Monthly",currency="INR")); assert store.load()[0].name=="Monthly"
-    assert (tmp_path/"r.json").exists() and (tmp_path/"r.xlsx").exists()
+    assert (tmp_path/"r.json").exists() and (tmp_path/"r.xlsx").exists() and (tmp_path/"r.pdf").exists()

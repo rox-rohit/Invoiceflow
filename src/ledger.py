@@ -64,6 +64,8 @@ class LedgerStore:
         self.conn.execute("CREATE TABLE IF NOT EXISTS financial_transactions (transaction_id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, transaction_type TEXT NOT NULL, transaction_date TEXT NOT NULL, document_date TEXT, due_date TEXT, counterparty TEXT, reference_number TEXT, description TEXT, category TEXT, subcategory TEXT, amount TEXT, tax_amount TEXT, currency TEXT, payment_status TEXT NOT NULL, payment_method TEXT, source_record_id INTEGER, source_file TEXT, verification_status TEXT NOT NULL, metadata_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(business_id) REFERENCES businesses(business_id))")
         self.conn.execute("CREATE TABLE IF NOT EXISTS transaction_audit (audit_id INTEGER PRIMARY KEY, transaction_id INTEGER NOT NULL, action TEXT NOT NULL, before_json TEXT, after_json TEXT, changed_at TEXT NOT NULL, FOREIGN KEY(transaction_id) REFERENCES financial_transactions(transaction_id))")
         self.conn.execute("CREATE TABLE IF NOT EXISTS budgets (budget_id INTEGER PRIMARY KEY, business_id INTEGER NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL, category TEXT NOT NULL, amount TEXT NOT NULL, currency TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, FOREIGN KEY(business_id) REFERENCES businesses(business_id))")
+        budget_columns={row[1] for row in self.conn.execute("PRAGMA table_info(budgets)").fetchall()}
+        if "active" not in budget_columns: self.conn.execute("ALTER TABLE budgets ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
         self.conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_transactions_date ON financial_transactions(business_id,transaction_date)"); self.conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_transactions_type ON financial_transactions(business_id,transaction_type)"); self.conn.execute("CREATE INDEX IF NOT EXISTS idx_financial_transactions_source ON financial_transactions(source_record_id)")
         self.conn.execute("INSERT OR IGNORE INTO businesses(business_id,name,base_currency,created_at) VALUES(1,'Default business','INR',?)",(datetime.now(timezone.utc).isoformat(),)); self.conn.execute("INSERT OR IGNORE INTO schema_migrations(version,applied_at) VALUES(1,?)",(datetime.now(timezone.utc).isoformat(),)); self.conn.commit()
 
@@ -90,6 +92,18 @@ class LedgerStore:
 
     def add_budget(self,business_id: int, start: str, end: str, category: str, amount: Decimal | float | str, currency: str) -> int:
         now=datetime.now(timezone.utc).isoformat(); cursor=self.conn.execute("INSERT INTO budgets(business_id,period_start,period_end,category,amount,currency,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)",(business_id,start,end,category,str(money(amount)),currency,now,now)); self.conn.commit(); return int(cursor.lastrowid)
+
+    def list_budgets(self, business_id: int = 1, active_only: bool = False) -> list[dict]:
+        sql="SELECT * FROM budgets WHERE business_id=?"; args=[business_id]
+        if active_only: sql += " AND active=1"
+        sql += " ORDER BY period_start, category, budget_id"
+        return [dict(row) for row in self.conn.execute(sql, args).fetchall()]
+
+    def update_budget(self, budget_id: int, start: str, end: str, category: str, amount: Decimal | float | str, currency: str) -> None:
+        now=datetime.now(timezone.utc).isoformat(); self.conn.execute("UPDATE budgets SET period_start=?,period_end=?,category=?,amount=?,currency=?,updated_at=? WHERE budget_id=?",(start,end,category,str(money(amount)),currency,now,budget_id)); self.conn.commit()
+
+    def set_budget_active(self, budget_id: int, active: bool) -> None:
+        now=datetime.now(timezone.utc).isoformat(); self.conn.execute("UPDATE budgets SET active=?,updated_at=? WHERE budget_id=?",(int(active),now,budget_id)); self.conn.commit()
 
     def backup_to(self,destination: str | Path) -> Path:
         destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True); self.conn.commit()

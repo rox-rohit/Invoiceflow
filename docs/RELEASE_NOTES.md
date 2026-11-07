@@ -1,4 +1,16 @@
-# InvoiceFlow 2.2.0
+# InvoiceFlow 2.3.0
+
+## 2.3.0 — Business analytics and financial intelligence
+
+- Added a centralized analytics service for verified KPI, monthly, category and party calculations.
+- Added QtCharts revenue/expense and expense-category visualizations to Business Overview.
+- Added extended date presets, configurable April–March financial-year periods and custom calendar ranges.
+- Added functional verified Sales, Purchases & Expenses, Customers & Suppliers, Business Insights and Budgets & Targets pages.
+- Added non-destructive budget activation/editing persistence.
+- Added shareable PDF business-report export with explicit estimate and data-quality disclosures.
+- Added analytics, chart, budget and PDF export regression coverage.
+
+Analytics remain conservative: receivables/payables, definitive COGS and net profit require explicit supporting records.
 
 ## 2.2.0 — Stability, UX and analytics navigation
 
