@@ -21,6 +21,7 @@ from .styles import STYLE
 from .widgets import InvoiceEditDialog
 from .workers import BatchWorker
 from .charts import FinancialChart
+from .transaction_dialog import TransactionDialog
 
 
 class MainWindow(QMainWindow):
@@ -34,6 +35,8 @@ class MainWindow(QMainWindow):
         self.store = HistoryStore(DB_PATH)
         self.thread = None
         self.worker = None
+        self._navigation=[]
+        self._current_page="Home"
         self._build()
         self._refresh()
 
@@ -49,7 +52,7 @@ class MainWindow(QMainWindow):
         self.location = QLabel("Home", objectName="breadcrumb")
         header.addWidget(self.location)
         home = QPushButton("Home")
-        home.clicked.connect(lambda: self._navigate("Home"))
+        home.clicked.connect(lambda: self._navigate("Home",False))
         header.addWidget(home)
         layout.addLayout(header)
         self.stack = QStackedWidget()
@@ -63,21 +66,25 @@ class MainWindow(QMainWindow):
         self.reports = self._reports()
         self.budgets = self._budget_page()
         self.settings = self._simple("Settings & Data", "Application data is stored in your Windows local application data folder.\n\nNo invoice contents leave this computer.")
-        self.about = self._simple("About InvoiceFlow", "InvoiceFlow 2.3\nPDF invoices → structured data\n\nDeterministic local invoice processing with transparent review flags.")
+        self.about = self._simple("About InvoiceFlow", "InvoiceFlow 2.3.1\nPDF invoices → structured data\n\nDeterministic local invoice processing with transparent review flags.")
         self.overview = self._overview()
+        self.analytics = self._analytics_page()
         self.sales = self._transaction_page("Sales & Income", {"sale", "sales_return", "collection"}, "sales")
         self.purchases = self._transaction_page("Purchases & Expenses", {"purchase", "purchase_return", "expense", "payment", "supplier_payment"}, "purchases")
+        self.expenses = self._transaction_page("Expenses", {"expense"}, "expenses")
+        self.received = self._transaction_page("Money Received", {"collection"}, "received")
+        self.paid = self._transaction_page("Money Paid", {"payment", "supplier_payment"}, "paid")
         self.parties = self._party_page()
         self.insights = self._insights_page()
-        for widget in (self.home, self.process, self.results, self.review, self.reports, self.budgets, self.settings, self.about, self.overview, self.sales, self.purchases, self.parties, self.insights):
+        for widget in (self.home, self.process, self.results, self.review, self.reports, self.budgets, self.settings, self.about, self.overview, self.analytics, self.sales, self.purchases, self.expenses, self.received, self.paid, self.parties, self.insights):
             self.stack.addWidget(widget)
         # Compatibility handle for existing integrations/tests; these are home cards, not a sidebar.
         self.nav = self.home_cards
-        self._navigate("Home")
+        self._navigate("Home",False)
 
     def _page(self, title, explanation=""):
         widget = QWidget(); view = QVBoxLayout(widget); view.setContentsMargins(12, 4, 12, 12)
-        view.addWidget(QLabel(title, objectName="pageTitle"))
+        header=QHBoxLayout(); back=QPushButton("← Back",objectName="backButton"); back.clicked.connect(self._back); header.addWidget(back); header.addWidget(QLabel(title, objectName="pageTitle")); header.addStretch(); view.addLayout(header)
         if explanation:
             note = QLabel(explanation, objectName="pageExplanation"); note.setWordWrap(True); view.addWidget(note)
         return widget, view
@@ -94,12 +101,20 @@ class MainWindow(QMainWindow):
     def _home(self):
         widget, view = self._page("Welcome to InvoiceFlow", "Choose what you want to do. Your financial totals are calculated from saved records and show their date range and data limitations.")
         self.stats = QLabel(objectName="overviewCard"); self.stats.setWordWrap(True); view.addWidget(self.stats)
+        quick=QHBoxLayout()
+        for label,kind in (("Add Sale","sale"),("Add Purchase","purchase"),("Add Expense","expense"),("Record Collection","collection"),("Record Payment","supplier_payment"),("Add Transaction","adjustment"),("Upload Documents","upload")):
+            button=QPushButton(label,objectName="primary" if kind in {"sale","expense"} else ""); button.clicked.connect(lambda checked=False, value=kind: self._quick_action(value)); quick.addWidget(button)
+        view.addLayout(quick)
         grid = QGridLayout(); grid.setSpacing(14)
-        cards = [("Business Overview", "Revenue, expenses, cash movement and data completeness.", "Overview"), ("Invoices & Documents", "Import PDFs, process batches, review and correct extraction.", "Process Invoices"), ("Sales & Income", "Sales, returns and verified customer collections.", "Sales"), ("Purchases & Expenses", "Purchases, expenses and supplier payments.", "Purchases"), ("Reports & Analytics", "Period reports, comparisons, targets and exports.", "Reports"), ("Budgets & Targets", "Plan spending and compare actual verified transactions.", "Budgets"), ("Customers & Suppliers", "Parties, history and outstanding records.", "Customers & Suppliers"), ("Business Insights", "Explainable warnings based on available records.", "Business Insights"), ("Settings & Data", "Backup, restore, preferences and application data.", "Settings")]
+        cards = [("Business Overview", "Revenue, expenses, cash movement and data completeness.", "Overview"), ("Invoices & Documents", "Import PDFs, process batches, review and correct extraction.", "Process Invoices"), ("Analytics", "Explore financial performance, sales, expenses and cash movement.", "Analytics"), ("Sales & Income", "Sales, returns and verified customer collections.", "Sales"), ("Purchases & Expenses", "Purchases, expenses and supplier payments.", "Purchases"), ("Expenses", "Record and review operating expenses by category.", "Expenses"), ("Money Received", "Record customer collections separately from sales.", "Money Received"), ("Money Paid", "Record supplier and other payments separately from purchases.", "Money Paid"), ("Reports & Analytics", "Period reports, comparisons, targets and exports.", "Reports"), ("Budgets & Targets", "Plan spending and compare actual verified transactions.", "Budgets"), ("Customers & Suppliers", "Parties, history and outstanding records.", "Customers & Suppliers"), ("Business Insights", "Explainable warnings based on available records.", "Business Insights"), ("Settings & Data", "Backup, restore, preferences and application data.", "Settings")]
         self.home_cards = []
         for index, (title, description, page) in enumerate(cards):
             card = self._card(title, description, page); self.home_cards.append(card); grid.addWidget(card, index // 2, index % 2)
         view.addLayout(grid); view.addStretch(); return widget
+
+    def _quick_action(self, kind):
+        if kind == "upload": self._navigate("Process Invoices")
+        else: self._open_transaction(kind)
 
     def _overview(self):
         widget, view = self._page("Business Overview", "Verified transactions only. If a figure is unavailable, InvoiceFlow explains which records are missing.")
@@ -112,6 +127,11 @@ class MainWindow(QMainWindow):
         controls.addWidget(QLabel("Period")); controls.addWidget(self.overview_period); controls.addWidget(QLabel("As of")); controls.addWidget(self.overview_anchor); controls.addWidget(self.overview_start); controls.addWidget(refresh); controls.addStretch(); view.addLayout(controls)
         self.overview_text = QLabel(objectName="overviewCard"); self.overview_text.setWordWrap(True); view.addWidget(self.overview_text)
         charts = QGridLayout(); self.revenue_chart = FinancialChart("Revenue vs expenses"); self.expense_chart = FinancialChart("Expense categories"); charts.addWidget(self.revenue_chart, 0, 0); charts.addWidget(self.expense_chart, 0, 1); view.addLayout(charts); view.addStretch(); return widget
+
+    def _analytics_page(self):
+        widget, view = self._page("Analytics", "A dedicated view of verified financial activity. Use the same period controls as Business Overview.")
+        self.analytics_text=QLabel("Select Refresh to load analytics.",objectName="overviewCard"); self.analytics_text.setWordWrap(True); view.addWidget(self.analytics_text)
+        charts=QGridLayout(); self.analytics_revenue_chart=FinancialChart("Monthly sales and expenses"); self.analytics_expense_chart=FinancialChart("Expense categories"); charts.addWidget(self.analytics_revenue_chart,0,0); charts.addWidget(self.analytics_expense_chart,0,1); view.addLayout(charts); refresh=QPushButton("Refresh analytics",objectName="primary"); refresh.clicked.connect(self._refresh_analytics); view.addWidget(refresh); view.addStretch(); return widget
 
     def _process(self):
         widget, view = self._page("Invoices & Documents", "Import PDF files or ZIP archives. Processing runs in the background and isolates individual failures.")
@@ -133,12 +153,23 @@ class MainWindow(QMainWindow):
 
     def _transaction_page(self, title, kinds, key):
         widget, view = self._page(title, "Only verified financial transactions are listed. Invoice documents alone are not treated as cash movement.")
-        controls = QHBoxLayout(); search = QLineEdit(); search.setPlaceholderText("Search counterparty, reference or category"); export_csv_button = QPushButton("Export CSV"); export_xlsx_button = QPushButton("Export Excel")
-        controls.addWidget(search); controls.addWidget(export_csv_button); controls.addWidget(export_xlsx_button); view.addLayout(controls)
+        controls = QHBoxLayout(); search = QLineEdit(); search.setPlaceholderText("Search counterparty, reference or category"); add_button=QPushButton("Add transaction",objectName="primary"); add_button.clicked.connect(lambda checked=False, default=self._default_transaction_type(key): self._open_transaction(default)); export_csv_button = QPushButton("Export CSV"); export_xlsx_button = QPushButton("Export Excel")
+        controls.addWidget(search); controls.addWidget(add_button); controls.addWidget(export_csv_button); controls.addWidget(export_xlsx_button); view.addLayout(controls)
         table = QTableWidget(0, 7); table.setHorizontalHeaderLabels(["Date", "Type", "Counterparty", "Category", "Amount", "Payment status", "Source"]); table.setSelectionBehavior(QTableWidget.SelectRows); view.addWidget(table)
         setattr(self, f"{key}_table", table); setattr(self, f"{key}_search", search); setattr(self, f"{key}_kinds", kinds)
         search.textChanged.connect(lambda _text, page_key=key: self._refresh_transaction_page(page_key)); export_csv_button.clicked.connect(lambda checked=False, page_key=key: self._export_transactions(page_key, "csv")); export_xlsx_button.clicked.connect(lambda checked=False, page_key=key: self._export_transactions(page_key, "xlsx")); table.cellDoubleClicked.connect(lambda row, column, page_key=key: self._transaction_detail(page_key, row, column))
         return widget
+
+    @staticmethod
+    def _default_transaction_type(key):
+        return {"sales":"sale","purchases":"purchase","expenses":"expense","received":"collection","paid":"supplier_payment"}.get(key,"adjustment")
+
+    def _open_transaction(self, default_type="sale"):
+        dialog=TransactionDialog(default_type,self)
+        if dialog.exec():
+            try:
+                ledger=LedgerStore(DB_PATH); ledger.add(dialog._transaction); ledger.close(); self._refresh()
+            except Exception as exc: QMessageBox.critical(self,"Transaction not saved",str(exc))
 
     def _party_page(self):
         widget, view = self._page("Customers & Suppliers", "Totals are based on verified sales and purchases. Outstanding balances require explicit payment records and are not inferred from invoices alone.")
@@ -216,9 +247,18 @@ class MainWindow(QMainWindow):
         for item in (QLabel("Category"), self.budget_category, QLabel("Amount"), self.budget_amount, self.budget_start, self.budget_end, save, deactivate): form.addWidget(item)
         view.addLayout(form); self.budget_table = QTableWidget(0, 6); self.budget_table.setHorizontalHeaderLabels(["Category", "Start", "End", "Budget", "Currency", "Active"]); self.budget_table.setSelectionBehavior(QTableWidget.SelectRows); self.budget_table.cellDoubleClicked.connect(self._load_budget); view.addWidget(self.budget_table); view.addStretch(); return widget
 
-    def _navigate(self, label):
-        pages = {"Home": (self.home, "Home"), "Overview": (self.overview, "Business Overview"), "Process Invoices": (self.process, "Invoices & Documents"), "Results": (self.results, "Results"), "Review": (self.review, "Review"), "Reports": (self.reports, "Reports & Analytics"), "Budgets": (self.budgets, "Budgets & Targets"), "Settings": (self.settings, "Settings & Data"), "About": (self.about, "About InvoiceFlow"), "Sales": (self.sales, "Sales & Income"), "Purchases": (self.purchases, "Purchases & Expenses"), "Customers & Suppliers": (self.parties, "Customers & Suppliers"), "Business Insights": (self.insights, "Business Insights")}
-        widget, title = pages[label]; self.stack.setCurrentWidget(widget); self.location.setText(title); self._refresh()
+    def _navigate(self, label, push=True):
+        pages = {"Home": (self.home, "Home"), "Overview": (self.overview, "Business Overview"), "Analytics": (self.analytics, "Analytics"), "Process Invoices": (self.process, "Invoices & Documents"), "Results": (self.results, "Results"), "Review": (self.review, "Review"), "Reports": (self.reports, "Reports & Analytics"), "Budgets": (self.budgets, "Budgets & Targets"), "Settings": (self.settings, "Settings & Data"), "About": (self.about, "About InvoiceFlow"), "Sales": (self.sales, "Sales & Income"), "Purchases": (self.purchases, "Purchases & Expenses"), "Expenses": (self.expenses, "Expenses"), "Money Received": (self.received, "Money Received"), "Money Paid": (self.paid, "Money Paid"), "Customers & Suppliers": (self.parties, "Customers & Suppliers"), "Business Insights": (self.insights, "Business Insights")}
+        if label not in pages: return
+        if label == "Home": self._navigation.clear(); push=False
+        if push and label != self._current_page: self._navigation.append(self._current_page)
+        widget, title = pages[label]; self.stack.setCurrentWidget(widget); self.location.setText(title); self._current_page=label; self._refresh()
+
+    def _back(self):
+        if self._navigation:
+            self._navigate(self._navigation.pop(),False)
+        else:
+            self._navigate("Home",False)
 
     def _generate_report(self):
         try:
@@ -258,6 +298,16 @@ class MainWindow(QMainWindow):
             self.expense_chart.set_categories(snapshot.expense_categories, self._show_source_transactions)
         except Exception as exc:
             self.overview_text.setText(f"Unable to refresh overview: {exc}")
+
+    def _refresh_analytics(self):
+        try:
+            period=period_for("last_12_months"); ledger=LedgerStore(DB_PATH); snapshot=build_analytics(ledger.list(verified_only=True),period,"INR",previous_period(period)); ledger.close()
+            lines=[f"{period.label}: {period.start.isoformat()} to {period.end.isoformat()}"]
+            for key,label in (("sales","Revenue"),("purchases","Purchases"),("expenses","Operating expenses"),("collections","Collections"),("payments","Payments"),("gross_profit","Estimated gross profit"),("net_profit","Estimated net profit")):
+                metric=snapshot.kpis[key]; value="Insufficient data" if metric["value"] is None else f"{metric['value']:,.2f} {snapshot.currency}"; lines.append(f"{label}: {value}")
+            if snapshot.data_quality: lines.append("\nData completeness:\n• " + "\n• ".join(snapshot.data_quality))
+            self.analytics_text.setText("\n".join(lines)); self.analytics_revenue_chart.set_monthly(snapshot.monthly,self._show_source_transactions); self.analytics_expense_chart.set_categories(snapshot.expense_categories,self._show_source_transactions)
+        except Exception as exc: self.analytics_text.setText(f"Unable to refresh analytics: {exc}")
 
     def _show_source_transactions(self, source_ids):
         identifiers = ", ".join(str(value) for value in source_ids if value) or "No source IDs available"
@@ -324,9 +374,10 @@ class MainWindow(QMainWindow):
             self._refresh_overview()
         if hasattr(self, "budget_table"): self._refresh_budgets()
         if hasattr(self, "table"): self._refresh_table()
-        for key in ("sales", "purchases"):
+        for key in ("sales", "purchases", "expenses", "received", "paid"):
             if hasattr(self, f"{key}_table"): self._refresh_transaction_page(key)
         if hasattr(self, "party_table"): self._refresh_parties_and_insights()
+        if hasattr(self, "analytics_text"): self._refresh_analytics()
         if hasattr(self, "review_text"): self.review_text.setText("\n".join(f"{r.invoice_number or '(missing number)'} — {issue.message}" for r in self.records if r.status == ProcessingStatus.NEEDS_REVIEW for issue in r.issues) or "No records require review.")
 
     def _refresh_table(self):

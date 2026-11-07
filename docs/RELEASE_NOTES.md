@@ -1,4 +1,16 @@
-# InvoiceFlow 2.3.0
+# InvoiceFlow 2.3.1
+
+## 2.3.1 — Workflow completion and navigation repair
+
+- Added global Back buttons and a centralized navigation history.
+- Added a dedicated Analytics home card and page.
+- Added quick daily actions for sales, purchases, expenses, collections and payments.
+- Added manual verified transaction entry using the unified financial ledger.
+- Added Expenses, Money Received and Money Paid operational pages.
+- Added transaction approval, audit-aware update/reversal service methods.
+- Added navigation and manual-entry regression coverage.
+
+CSV/Excel financial-data import, full contact management and complete payment allocation remain deferred until their schemas and validation rules are expanded.
 
 ## 2.3.0 — Business analytics and financial intelligence
 

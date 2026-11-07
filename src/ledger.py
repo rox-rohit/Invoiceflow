@@ -105,6 +105,20 @@ class LedgerStore:
     def set_budget_active(self, budget_id: int, active: bool) -> None:
         now=datetime.now(timezone.utc).isoformat(); self.conn.execute("UPDATE budgets SET active=?,updated_at=? WHERE budget_id=?",(int(active),now,budget_id)); self.conn.commit()
 
+    def update_transaction(self, transaction: LedgerTransaction) -> None:
+        if transaction.transaction_id is None: raise ValueError("Transaction ID is required for an update")
+        existing=self.conn.execute("SELECT * FROM financial_transactions WHERE transaction_id=?",(transaction.transaction_id,)).fetchone()
+        if not existing: raise KeyError(transaction.transaction_id)
+        now=datetime.now(timezone.utc).isoformat(); before=dict(existing); transaction.updated_at=now
+        self.conn.execute("UPDATE financial_transactions SET transaction_type=?,transaction_date=?,due_date=?,counterparty=?,reference_number=?,description=?,category=?,subcategory=?,amount=?,tax_amount=?,currency=?,payment_status=?,payment_method=?,verification_status=?,metadata_json=?,updated_at=? WHERE transaction_id=?",(transaction.transaction_type,transaction.transaction_date,transaction.due_date,transaction.counterparty,transaction.reference_number,transaction.description,transaction.category,transaction.subcategory,str(transaction.amount) if transaction.amount is not None else None,str(transaction.tax_amount) if transaction.tax_amount is not None else None,transaction.currency,transaction.payment_status,transaction.payment_method,transaction.verification_status,json.dumps(transaction.metadata),now,transaction.transaction_id))
+        self.conn.execute("INSERT INTO transaction_audit(transaction_id,action,before_json,after_json,changed_at) VALUES(?,?,?,?,?)",(transaction.transaction_id,"UPDATE",json.dumps(before,default=str),json.dumps(transaction.to_dict(),default=str),now)); self.conn.commit()
+
+    def reverse(self, transaction_id: int, reason: str) -> LedgerTransaction:
+        row=self.conn.execute("SELECT * FROM financial_transactions WHERE transaction_id=?",(transaction_id,)).fetchone()
+        if not row: raise KeyError(transaction_id)
+        original=LedgerTransaction.from_row(row); reversal=LedgerTransaction(business_id=original.business_id,transaction_type="adjustment",transaction_date=datetime.now(timezone.utc).date().isoformat(),counterparty=original.counterparty,reference_number=original.reference_number,description=f"Reversal of transaction {transaction_id}: {reason}",category=original.category,amount=-original.amount if original.amount is not None else None,tax_amount=-original.tax_amount if original.tax_amount is not None else None,currency=original.currency,payment_status="not_applicable",source_record_id=original.source_record_id,source_file=original.source_file,verification_status="VERIFIED",metadata={"reverses_transaction_id":transaction_id,"reason":reason})
+        return self.add(reversal)
+
     def backup_to(self,destination: str | Path) -> Path:
         destination=Path(destination); destination.parent.mkdir(parents=True,exist_ok=True); self.conn.commit()
         with sqlite3.connect(destination) as target: self.conn.backup(target)
