@@ -96,8 +96,10 @@ def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPer
         "transaction_count": _metric(Decimal(len(current)), [_source(item) for item in current], "Verified transactions in the selected period.", True, False, Decimal(len(previous))),
     }
     monthly = defaultdict(lambda: defaultdict(lambda: ZERO))
+    monthly_sources = defaultdict(list)
     for item in current:
         month = item.transaction_date[:7]
+        monthly_sources[month].append(_source(item))
         kind = _kind(item); amount = _amount(item.amount)
         if kind in {"sale", "sales_return"}: monthly[month]["sales"] += amount if kind == "sale" else -amount
         elif kind in {"purchase", "purchase_return"}: monthly[month]["purchases"] += amount if kind == "purchase" else -amount
@@ -106,7 +108,7 @@ def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPer
         elif kind in {"payment", "supplier_payment"}: monthly[month]["payments"] += amount
     monthly_rows = []
     for month in sorted(monthly):
-        row = dict(month=month, sales=monthly[month]["sales"], purchases=monthly[month]["purchases"], expenses=monthly[month]["expenses"], collections=monthly[month]["collections"], payments=monthly[month]["payments"]); row["gross_profit"] = row["sales"] - row["purchases"] if row["purchases"] else None; monthly_rows.append(row)
+        row = dict(month=month, sales=monthly[month]["sales"], purchases=monthly[month]["purchases"], expenses=monthly[month]["expenses"], collections=monthly[month]["collections"], payments=monthly[month]["payments"], source_ids=monthly_sources[month]); row["gross_profit"] = row["sales"] - row["purchases"] if row["purchases"] else None; monthly_rows.append(row)
     category_totals = defaultdict(lambda: ZERO); category_ids = defaultdict(list)
     for item in current:
         if _kind(item) == "expense": category_totals[item.category or "Uncategorized"] += _amount(item.amount); category_ids[item.category or "Uncategorized"].append(_source(item))

@@ -254,10 +254,14 @@ class MainWindow(QMainWindow):
             lines.append(f"Verified transactions: {snapshot.kpis['transaction_count']['value']}")
             if snapshot.data_quality: lines.append("\nData completeness:\n• " + "\n• ".join(snapshot.data_quality))
             self.overview_text.setText("\n".join(lines))
-            self.revenue_chart.set_monthly(snapshot.monthly)
-            self.expense_chart.set_categories(snapshot.expense_categories)
+            self.revenue_chart.set_monthly(snapshot.monthly, self._show_source_transactions)
+            self.expense_chart.set_categories(snapshot.expense_categories, self._show_source_transactions)
         except Exception as exc:
             self.overview_text.setText(f"Unable to refresh overview: {exc}")
+
+    def _show_source_transactions(self, source_ids):
+        identifiers = ", ".join(str(value) for value in source_ids if value) or "No source IDs available"
+        QMessageBox.information(self, "Source transactions", f"The selected chart value is supported by these verified source records:\n{identifiers}")
 
     def _refresh_budgets(self):
         ledger = LedgerStore(DB_PATH); rows = ledger.list_budgets(); ledger.close(); self.budget_table.setRowCount(len(rows))
