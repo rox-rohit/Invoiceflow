@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+build/
+dist/
+*.db
+*.log
+temp/
+data/Samples of electronic invoices/
+data/**/*.pdf
+data/**/*.zip

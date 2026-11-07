@@ -1,0 +1,6 @@
+[
+  {"file": "invoice_0_charspace_1.pdf", "invoice_number": "12060439", "invoice_date": "2020-08-29", "vendor_name": "Brown-Johnson", "customer_name": "Calderon-Duran", "subtotal": 8591.16, "tax_amount": 859.12, "total_amount": 9450.28, "line_item_count": 3},
+  {"file": "invoice_10_charspace_11.pdf", "invoice_number": "66486540", "invoice_date": "2021-05-22", "vendor_name": "Williams, Stephens and Hopkins", "customer_name": "Mitchell, Kelly and Hayes", "subtotal": 359.96, "tax_amount": 36.00, "total_amount": 395.96, "line_item_count": 1},
+  {"file": "invoice_100_charspace_101.pdf", "invoice_number": "88631011", "invoice_date": "2020-09-19", "vendor_name": "Miller, Gonzalez and Allen", "customer_name": "Reyes Ltd", "subtotal": 136.00, "tax_amount": 13.60, "total_amount": 149.60, "line_item_count": 1},
+  {"file": "invoice_101_charspace_102.pdf", "invoice_number": "58884126", "invoice_date": "2012-08-29", "vendor_name": "Carter Inc", "customer_name": "Bond, Bryant and Jackson", "subtotal": 293.95, "tax_amount": 29.39, "total_amount": 323.34, "line_item_count": 3}
+]
