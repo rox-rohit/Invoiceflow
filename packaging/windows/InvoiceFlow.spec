@@ -5,7 +5,7 @@ a = Analysis(
     ['../../main.py'],
     pathex=['D:/Mlnew/InvoiceFlow'],
     binaries=[],
-    datas=[],
+    datas=[('D:/Mlnew/InvoiceFlow/assets/brand', 'assets/brand')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -32,6 +32,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['D:/Mlnew/InvoiceFlow/assets/brand/invoiceflow-if-logo.ico'],
 )
 coll = COLLECT(
     exe,

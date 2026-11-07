@@ -41,3 +41,73 @@ def test_extended_periods_and_invalid_custom_range():
     assert period_for("last_month", date(2026, 3, 15)).start == date(2026, 2, 1)
     assert period_for("current_financial_year", date(2026, 3, 15)).start == date(2025, 4, 1)
     assert period_for("previous_financial_year", date(2026, 5, 15)).start == date(2025, 4, 1)
+
+
+def test_series_uses_daily_buckets_for_single_day_and_separates_cash():
+    period = period_for("day", date(2026, 11, 7))
+    items = [
+        transaction("sale", "2026-11-07", "50000"),
+        transaction("purchase", "2026-11-07", "2000"),
+        transaction("collection", "2026-11-07", "10000"),
+        transaction("supplier_payment", "2026-11-07", "500"),
+    ]
+    snapshot = build_analytics(items, period, "INR")
+    assert snapshot.granularity == "day"
+    assert len(snapshot.series) == 1
+    assert snapshot.series[0]["sales"] == Decimal("50000.00")
+    assert snapshot.series[0]["purchases"] == Decimal("2000.00")
+    assert snapshot.series[0]["expenses"] == Decimal("0.00")
+    assert snapshot.series[0]["collections"] == Decimal("10000.00")
+    assert snapshot.series[0]["payments"] == Decimal("500.00")
+
+
+def test_series_uses_weekly_and_monthly_buckets_for_longer_periods():
+    weekly = build_analytics(
+        [transaction("sale", "2026-01-02", "100"), transaction("sale", "2026-02-01", "200")],
+        period_for("last_3_months", date(2026, 2, 15)),
+        "INR",
+    )
+    annual = build_analytics(
+        [transaction("sale", "2026-01-02", "100"), transaction("sale", "2026-02-01", "200")],
+        period_for("last_12_months", date(2026, 2, 15)),
+        "INR",
+    )
+    assert weekly.granularity == "week"
+    assert annual.granularity == "month"
+    assert sum((row["sales"] for row in weekly.series), Decimal("0.00")) == Decimal("300.00")
+    assert sum((row["sales"] for row in annual.series), Decimal("0.00")) == Decimal("300.00")
+
+
+def test_budget_utilization_is_period_scoped_and_excludes_reversed_expenses():
+    period = period_for("month", date(2026, 1, 15))
+    items = [
+        transaction("expense", "2026-01-05", "900", category="Rent"),
+        transaction("expense", "2026-01-06", "250", category="Rent"),
+        LedgerTransaction(
+            transaction_type="expense",
+            transaction_date="2026-01-07",
+            amount="500",
+            currency="INR",
+            category="Rent",
+            verification_status="REVERSED",
+        ),
+    ]
+    snapshot = build_analytics(
+        items,
+        period,
+        budgets=[{
+            "budget_id": 1,
+            "period_start": "2026-01-01",
+            "period_end": "2026-01-31",
+            "category": "Rent",
+            "amount": "1000",
+            "currency": "INR",
+            "active": 1,
+        }],
+    )
+    row = snapshot.budget_utilization[0]
+    assert row["budget"] == Decimal("1000.00")
+    assert row["actual"] == Decimal("1150.00")
+    assert row["remaining"] == Decimal("-150.00")
+    assert row["overspent"] is True
+    assert row["utilization"] == Decimal("1.15")

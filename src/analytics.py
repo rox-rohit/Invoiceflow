@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterable
 
@@ -40,10 +41,15 @@ class AnalyticsSnapshot:
     insights: list[dict]
     data_quality: list[str]
     transactions: list[LedgerTransaction]
+    series: list[dict]
+    granularity: str
+    budget_utilization: list[dict] = field(default_factory=list)
 
 
 def _in_period(transaction, period: ReportPeriod, currency: str) -> bool:
-    return period.contains(getattr(transaction, "transaction_date", "")) and (not transaction.currency or transaction.currency == currency)
+    status = getattr(transaction, "verification_status", None)
+    verified = status is None or status in {"VERIFIED", "USER_REVIEWED"}
+    return verified and period.contains(getattr(transaction, "transaction_date", "")) and (not transaction.currency or transaction.currency == currency)
 
 
 def _totals(transactions: list[LedgerTransaction]) -> dict[str, Decimal]:
@@ -68,7 +74,138 @@ def _metric(value, source_ids, explanation, complete=True, estimated=False, prev
     return {"value": value, "source_ids": source_ids, "explanation": explanation, "complete": complete, "estimated": estimated, "previous": previous, "change": change}
 
 
-def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPeriod, currency: str = "INR", previous_period: ReportPeriod | None = None, budgets: dict[str, Decimal | float | str] | None = None) -> AnalyticsSnapshot:
+def _bucket_start(value: date, granularity: str) -> date:
+    if granularity == "day":
+        return value
+    if granularity == "week":
+        return value - timedelta(days=value.weekday())
+    return value.replace(day=1)
+
+
+def _series_granularity(period: ReportPeriod) -> str:
+    days = (period.end - period.start).days + 1
+    if days <= 31:
+        return "day"
+    if days <= 120:
+        return "week"
+    return "month"
+
+
+def _next_bucket(value: date, granularity: str) -> date:
+    if granularity == "day":
+        return value + timedelta(days=1)
+    if granularity == "week":
+        return value + timedelta(days=7)
+    return (value.replace(day=28) + timedelta(days=4)).replace(day=1)
+
+
+def _build_series(current: list[LedgerTransaction], period: ReportPeriod) -> tuple[list[dict], str]:
+    granularity = _series_granularity(period)
+    buckets: dict[date, dict] = {}
+    cursor = _bucket_start(period.start, granularity)
+    last = _bucket_start(period.end, granularity)
+    while cursor <= last:
+        label = cursor.isoformat() if granularity == "day" else (
+            f"Week of {cursor.isoformat()}" if granularity == "week" else cursor.strftime("%b %Y")
+        )
+        buckets[cursor] = {
+            "label": label,
+            "key": cursor.isoformat(),
+            "sales": ZERO,
+            "purchases": ZERO,
+            "expenses": ZERO,
+            "collections": ZERO,
+            "payments": ZERO,
+            "sales_source_ids": [],
+            "purchase_source_ids": [],
+            "expense_source_ids": [],
+            "collection_source_ids": [],
+            "payment_source_ids": [],
+            "source_ids": [],
+        }
+        cursor = _next_bucket(cursor, granularity)
+    for item in current:
+        try:
+            item_date = date.fromisoformat(item.transaction_date[:10])
+        except (TypeError, ValueError):
+            continue
+        bucket = buckets.get(_bucket_start(item_date, granularity))
+        if bucket is None:
+            continue
+        kind = _kind(item)
+        amount = _amount(item.amount)
+        source_id = _source(item)
+        if kind in {"sale", "sales_return"}:
+            bucket["sales"] += amount if kind == "sale" else -amount
+            bucket["sales_source_ids"].append(source_id)
+        elif kind in {"purchase", "purchase_return"}:
+            bucket["purchases"] += amount if kind == "purchase" else -amount
+            bucket["purchase_source_ids"].append(source_id)
+        elif kind == "expense":
+            bucket["expenses"] += amount
+            bucket["expense_source_ids"].append(source_id)
+        elif kind == "collection":
+            bucket["collections"] += amount
+            bucket["collection_source_ids"].append(source_id)
+        elif kind in {"payment", "supplier_payment"}:
+            bucket["payments"] += amount
+            bucket["payment_source_ids"].append(source_id)
+        bucket["source_ids"].append(source_id)
+    for bucket in buckets.values():
+        bucket["gross_profit"] = bucket["sales"] - bucket["purchases"]
+    return list(buckets.values()), granularity
+
+
+def build_budget_utilization(
+    transactions: Iterable[LedgerTransaction],
+    period: ReportPeriod,
+    budgets: Iterable[dict],
+    currency: str = "INR",
+) -> list[dict]:
+    """Return period-scoped budget performance from verified expense records.
+
+    A saved budget retains its configured amount when its period overlaps the
+    selected range; actual spending is filtered to the selected range.
+    Reversed and unverified transactions are excluded by the ledger filter.
+    """
+    current = [item for item in transactions if _in_period(item, period, currency) and _kind(item) == "expense"]
+    actual_by_category = defaultdict(lambda: ZERO)
+    source_ids = defaultdict(list)
+    for item in current:
+        category = (item.category or "Uncategorized").strip() or "Uncategorized"
+        actual_by_category[category.casefold()] += _amount(item.amount)
+        source_ids[category.casefold()].append(_source(item))
+
+    rows = []
+    for budget in budgets:
+        if not budget.get("active", 1) or budget.get("currency", currency) != currency:
+            continue
+        try:
+            start = date.fromisoformat(str(budget["period_start"])[:10])
+            end = date.fromisoformat(str(budget["period_end"])[:10])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if min(end, period.end) < max(start, period.start) or end < start:
+            continue
+        planned = _amount(budget.get("amount")) or ZERO
+        category = str(budget.get("category") or "Uncategorized").strip() or "Uncategorized"
+        actual = actual_by_category[category.casefold()]
+        remaining = planned - actual
+        rows.append({
+            "category": category,
+            "label": f"{category} ({(actual / planned):.0%})" if planned else f"{category} (n/a)",
+            "budget": planned.quantize(Decimal("0.01")),
+            "actual": actual,
+            "remaining": remaining.quantize(Decimal("0.01")),
+            "utilization": (actual / planned) if planned else None,
+            "overspent": actual > planned if planned else False,
+            "source_ids": source_ids[category.casefold()],
+            "budget_id": budget.get("budget_id"),
+        })
+    return sorted(rows, key=lambda row: row["category"].casefold())
+
+
+def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPeriod, currency: str = "INR", previous_period: ReportPeriod | None = None, budgets: dict[str, Decimal | float | str] | Iterable[dict] | None = None) -> AnalyticsSnapshot:
     all_transactions = list(transactions)
     current = [item for item in all_transactions if _in_period(item, period, currency)]
     previous = [item for item in all_transactions if previous_period and _in_period(item, previous_period, currency)]
@@ -95,20 +232,20 @@ def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPer
         "payments": _metric(totals["payments"], ids["payments"], "Explicitly recorded supplier and operating payments; purchases are not treated as cash paid.", previous=previous_totals["payments"]),
         "transaction_count": _metric(Decimal(len(current)), [_source(item) for item in current], "Verified transactions in the selected period.", True, False, Decimal(len(previous))),
     }
+    series, granularity = _build_series(current, period)
     monthly = defaultdict(lambda: defaultdict(lambda: ZERO))
     monthly_sources = defaultdict(list)
     for item in current:
         month = item.transaction_date[:7]
-        monthly_sources[month].append(_source(item))
         kind = _kind(item); amount = _amount(item.amount)
-        if kind in {"sale", "sales_return"}: monthly[month]["sales"] += amount if kind == "sale" else -amount
+        if kind in {"sale", "sales_return"}: monthly[month]["sales"] += amount if kind == "sale" else -amount; monthly_sources[month + ":sales"].append(_source(item))
         elif kind in {"purchase", "purchase_return"}: monthly[month]["purchases"] += amount if kind == "purchase" else -amount
-        elif kind == "expense": monthly[month]["expenses"] += amount
+        elif kind == "expense": monthly[month]["expenses"] += amount; monthly_sources[month + ":expenses"].append(_source(item))
         elif kind == "collection": monthly[month]["collections"] += amount
         elif kind in {"payment", "supplier_payment"}: monthly[month]["payments"] += amount
     monthly_rows = []
     for month in sorted(monthly):
-        row = dict(month=month, sales=monthly[month]["sales"], purchases=monthly[month]["purchases"], expenses=monthly[month]["expenses"], collections=monthly[month]["collections"], payments=monthly[month]["payments"], source_ids=monthly_sources[month]); row["gross_profit"] = row["sales"] - row["purchases"] if row["purchases"] else None; monthly_rows.append(row)
+        row = dict(month=month, sales=monthly[month]["sales"], purchases=monthly[month]["purchases"], expenses=monthly[month]["expenses"], collections=monthly[month]["collections"], payments=monthly[month]["payments"], sales_source_ids=monthly_sources[month + ":sales"], expense_source_ids=monthly_sources[month + ":expenses"], source_ids=monthly_sources[month + ":sales"] + monthly_sources[month + ":expenses"]); row["gross_profit"] = row["sales"] - row["purchases"] if row["purchases"] else None; monthly_rows.append(row)
     category_totals = defaultdict(lambda: ZERO); category_ids = defaultdict(list)
     for item in current:
         if _kind(item) == "expense": category_totals[item.category or "Uncategorized"] += _amount(item.amount); category_ids[item.category or "Uncategorized"].append(_source(item))
@@ -124,8 +261,11 @@ def build_analytics(transactions: Iterable[LedgerTransaction], period: ReportPer
         insights.append(dict(finding="Sales decreased compared with the previous period.", evidence={"current": sales, "previous": previous_totals["sales"]}, source_ids=ids["sales"], action="Review the largest customer and product changes.", confidence="medium"))
     if previous_period and previous_totals["expenses"] and expenses > previous_totals["expenses"] * Decimal("1.2"):
         insights.append(dict(finding="Operating expenses increased by more than 20%.", evidence={"current": expenses, "previous": previous_totals["expenses"]}, source_ids=ids["expenses"], action="Review the largest expense categories and linked source records.", confidence="high"))
-    if budgets:
+    budget_rows = []
+    if budgets and not isinstance(budgets, dict):
+        budget_rows = build_budget_utilization(current, period, budgets, currency)
+    if budgets and isinstance(budgets, dict):
         for category, planned in budgets.items():
             actual = category_totals.get(category, ZERO); planned_amount = money(planned)
             if planned_amount and actual > planned_amount: insights.append(dict(finding=f"{category} is over budget.", evidence={"actual": actual, "budget": planned_amount, "overspend": actual - planned_amount}, source_ids=category_ids.get(category, []), action="Review the linked expenses and update the spending plan if appropriate.", confidence="high"))
-    return AnalyticsSnapshot(period, currency, kpis, monthly_rows, expense_categories, customers, suppliers, insights, quality, current)
+    return AnalyticsSnapshot(period, currency, kpis, monthly_rows, expense_categories, customers, suppliers, insights, quality, current, series, granularity, budget_rows)
