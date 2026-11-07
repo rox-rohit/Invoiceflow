@@ -1,5 +1,5 @@
 #define MyAppName "InvoiceFlow"
-#define MyAppVersion "2.1.0"
+#define MyAppVersion "2.2.0"
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}

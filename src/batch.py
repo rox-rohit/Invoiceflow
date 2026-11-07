@@ -106,16 +106,16 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda:stream.read(1024*1024),b""): digest.update(chunk)
     return digest.hexdigest()
 
-def _materialize(spec: SourceSpec, temp_dir: Path) -> tuple[Path,str]:
+def _materialize(spec: SourceSpec, temp_dir: Path, max_bytes: int = DEFAULT_MAX_BYTES) -> tuple[Path,str]:
     if spec.kind=="file": return spec.path,_sha256(spec.path)
     path=temp_dir / (hashlib.sha1(spec.display_name.encode()).hexdigest()+".pdf")
-    with zipfile.ZipFile(spec.path) as archive: _copy_member(archive,archive.getinfo(spec.member),path,DEFAULT_MAX_BYTES)
+    with zipfile.ZipFile(spec.path) as archive: _copy_member(archive,archive.getinfo(spec.member),path,max_bytes)
     return path,_sha256(path)
 
-def _process_one(spec: SourceSpec) -> InvoiceRecord:
+def _process_one(spec: SourceSpec, max_bytes: int = DEFAULT_MAX_BYTES) -> InvoiceRecord:
     with tempfile.TemporaryDirectory(prefix="invoiceflow-pdf-") as temp:
         try:
-            path,digest=_materialize(spec,Path(temp)); record=parse_invoice(extract_pdf(path)); record.source_sha256=digest; record.source_file=spec.display_name or str(spec.path); return record
+            path,digest=_materialize(spec,Path(temp),max_bytes); record=parse_invoice(extract_pdf(path)); record.source_sha256=digest; record.source_file=spec.display_name or str(spec.path); return record
         except Exception as exc:
             record=InvoiceRecord(source_file=spec.display_name or str(spec.path),status=ProcessingStatus.ERROR)
             record.issues.append(ValidationIssue("PROCESSING_ERROR",str(exc),"error")); return record
@@ -124,12 +124,12 @@ def process_batch(paths: Iterable[str | Path], callback: Callable[[int,int,str],
     discovery=discover_inputs(paths,max_files,max_bytes); state_store=JobStore(Path(state_path).parent) if state_path else None; state=(state_store.load(job_id) if state_store and resume else None) or JobState(job_id,total=len(discovery.sources)); completed_sources=set(state.completed_sources or []) if state else set(); specs=[spec for spec in discovery.sources if spec.display_name not in completed_sources]; total=len(discovery.sources); records=[]; seen_hashes=set(); completed=state.completed if state else 0
     try:
         with ThreadPoolExecutor(max_workers=max(1,min(workers,4)),thread_name_prefix="invoiceflow") as executor:
-            pending: dict[Future[InvoiceRecord],SourceSpec]={}; source_iter=iter(discovery.sources)
+            pending: dict[Future[InvoiceRecord],SourceSpec]={}; source_iter=iter(specs)
             def fill() -> None:
                 while len(pending)<max(1,min(workers,4)) and not (cancel_event and cancel_event.is_set()):
                     try: spec=next(source_iter)
                     except StopIteration: break
-                    pending[executor.submit(_process_one,spec)]=spec
+                    pending[executor.submit(_process_one,spec,max_bytes)]=spec
             fill()
             while pending:
                 done,_=wait(tuple(pending),return_when=FIRST_COMPLETED)

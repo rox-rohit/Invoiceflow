@@ -52,3 +52,12 @@ def test_exports_read_back_corrected_values(tmp_path):
 def test_job_state_roundtrip(tmp_path):
     jobs=JobStore(tmp_path/"jobs"); state=JobState("batch-1",total=10,completed=3,completed_sources=["a.pdf"]); jobs.save(state)
     loaded=jobs.load("batch-1"); assert loaded.completed==3 and loaded.completed_sources==["a.pdf"]; jobs.clear("batch-1"); assert jobs.load("batch-1") is None
+
+def test_batch_resume_skips_completed_sources(tmp_path):
+    first=tmp_path/"a.pdf"; second=tmp_path/"b.pdf"
+    make_pdf(first,"TAX INVOICE\nInvoice Number: A\nSeller: Vendor\nTotal: 10")
+    make_pdf(second,"TAX INVOICE\nInvoice Number: B\nSeller: Vendor\nTotal: 20")
+    jobs=JobStore(tmp_path/"jobs")
+    jobs.save(JobState("resume",total=2,completed=1,completed_sources=[first.name]))
+    results=process_batch([first,second],state_path=tmp_path/"jobs"/"state.json",job_id="resume",resume=True)
+    assert len(results)==1 and results[0].source_file.endswith("b.pdf")

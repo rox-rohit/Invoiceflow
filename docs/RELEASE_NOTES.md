@@ -1,4 +1,15 @@
-# InvoiceFlow 2.1.0
+# InvoiceFlow 2.2.0
+
+## 2.2.0 — Stability, UX and analytics navigation
+
+- Added card-based home navigation in the native desktop UI.
+- Replaced manual report-period text entry with a visual period selector and calendar date control.
+- Added worker lifecycle cleanup, close-time cancellation handling and throttled progress updates.
+- Fixed resumable processing so completed sources are actually skipped.
+- Added progressive synthetic batch-stability tooling for 1, 10, 25, 50, 100, 250 and 500 PDFs.
+- Added regression coverage for batch resume and period-selector navigation.
+
+The stress fixtures and throughput results are synthetic stability measurements, not extraction-accuracy evidence.
 
 ## 2.1.0 — Financial Intelligence Foundation
 
