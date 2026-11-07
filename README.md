@@ -31,29 +31,29 @@ Financial figures remain traceable to source records. Invoice revenue is not tre
 
 ## Screenshots
 
-The repository includes application captures from the 3.0 redesign. Automated offscreen captures have a documented font-rendering limitation; they are evidence of layout and theme coverage, not a substitute for clean-machine Windows acceptance testing.
+The repository includes native Windows captures from the running 3.0 application. Clean-machine Windows acceptance remains a separate release limitation.
 
 ### Dashboard
 
-![InvoiceFlow dashboard](data/ui_redesign_3.0/light-1280x875-dashboard.png)
+![InvoiceFlow dashboard](data/ui_redesign_3.0/visible-light-dashboard-1280x875.png)
 
 ### Analytics
 
-![InvoiceFlow analytics](data/ui_redesign_3.0/light-1280x875-analytics.png)
+![InvoiceFlow analytics](data/ui_redesign_3.0/visible-light-analytics-1280x875.png)
 
 ### Transactions
 
-![InvoiceFlow transactions](data/ui_redesign_3.0/light-1280x875-transactions.png)
+![InvoiceFlow transactions](data/ui_redesign_3.0/visible-light-transactions-1280x875.png)
 
 ### Invoice upload and import centre
 
-![InvoiceFlow invoice upload](data/ui_redesign_3.0/light-1280x875-invoice-upload.png)
+![InvoiceFlow invoice upload](data/ui_redesign_3.0/visible-light-invoice-upload-1280x875.png)
 
-![InvoiceFlow imports](data/ui_redesign_3.0/light-1280x875-imports.png)
+![InvoiceFlow imports](data/ui_redesign_3.0/visible-light-imports-1280x875.png)
 
 ### Dark mode
 
-![InvoiceFlow dark dashboard](data/ui_redesign_3.0/dark-1280x875-dashboard-final.png)
+![InvoiceFlow dark dashboard](data/ui_redesign_3.0/visible-dark-dashboard-1280x875.png)
 
 ## Windows installation
 
